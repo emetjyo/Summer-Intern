@@ -1,0 +1,64 @@
+
+%%% theta: along y axis(longitude) , pi: along z-axis(latitude)
+% function [out_img,new_h_map,new_w_] = eq2perspective(img,w_fov,th,phi,out_h,out_w,radius)
+function [out_img,lat,lon] = eq2perspective(img,w_fov,th,phi,out_h,out_w,radius)
+if ~exist('radius','var')
+    radius = 1;
+end
+[eq_h,eq_w,~] = size(img);
+eq_c_w = ((eq_w+1)/2); eq_c_h = ((eq_h+1)/2);
+out_c_w = ((out_w+1)/2); out_c_h = ((out_h+1)/2);
+
+factor_r2d = 180/pi;
+factor_d2r = pi/180;
+
+w_fov_r = w_fov*factor_d2r;
+h_fov_r = 2*atan((out_h/out_w)*tan(w_fov_r/2));
+
+virtual_per_w = 2*radius*tan(w_fov_r/2);
+virtual_per_h = 2*radius*tan(h_fov_r/2);
+dw = virtual_per_w/(out_w-1) ; % [1,...,out_w]*dw = [~,...,virtual_per_w]
+dh = virtual_per_h/(out_h-1) ;
+%%% construct D ratio 
+% x: point to perspective img 
+% y: point to longitude/width 
+% z: point to latitude/height
+D_x = zeros(out_h,out_w)+radius;
+D_y = repmat(([1:out_w]-out_c_w)*dw,[out_h,1]); % [1:n] = 1Xn 
+D_z = -repmat(([1:out_h]'-out_c_h)*dh,[1,out_w]);
+% distance to perspective plane
+D_map = sqrt(D_x.^2 + D_y.^2 + D_z.^2);
+DR = radius./D_map; Dr_x = DR.*D_x; Dr_y = (DR.*D_y); Dr_z = (DR.*D_z);
+xyz(:,:,1) = Dr_x; xyz(:,:,2) = Dr_y; xyz(:,:,3) = Dr_z;
+xyz = reshape(xyz,[],3)';
+R1 = rotz(th);
+R22 = roty(-phi);
+
+% R2 = rotationVectorToMatrix(R1_*(phi)*factor_d2r);% cannot use -phi here
+% R2*R1(phi after theta) == R1*R22 (theta after phi,theta is less) 
+xyz = R1*R22*xyz; xyz = xyz';xyz = reshape(xyz,out_h,out_w,[]);
+% if non rotation => go to rotation
+Dr_z = xyz(:,:,3); Dr_y = xyz(:,:,2); Dr_x = xyz(:,:,1);
+lat = asin(Dr_z/radius); % phi radians
+
+theta = atan(Dr_y./Dr_x);
+lon = theta;
+idx1 = Dr_x > 0;
+idx2 = Dr_y > 0;
+
+idx3 = ((~idx1) & (idx2));
+idx4 = ((~idx1) & (~idx2));
+
+lon(idx3) = theta(idx3) + pi;
+lon(idx4) = theta(idx4) - pi;
+
+lon = lon*factor_r2d;
+lat = -lat*factor_r2d;
+new_w_map = lon / 180 * eq_c_w + eq_c_w; %% u = atan2(x,z)/2pi+0.5
+new_h_map = lat / 90 * eq_c_h + eq_c_h; %% v = y*0.5+0.5
+
+out_img = remap_bilinear(img,new_h_map,new_w_map);
+
+end
+
+
